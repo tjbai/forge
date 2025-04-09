@@ -5,6 +5,9 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 import matplotlib.pyplot as plt
+import fire
+
+# TODO -- reproducible preamble
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 VOCAB = torch.tensor([[[-1., 1.]]], device=device)
@@ -61,42 +64,48 @@ def compute_exact_dist(n: int, beta: float):
 def tvd(exact_dist: torch.Tensor, empirical_dist: torch.Tensor):
     return 1/2 * torch.sum(torch.abs(exact_dist - empirical_dist)).item()
 
-if __name__ == '__main__':
-    ALPHA, BETA, P = 1.0, 0.42, 1.0
-    B, N = 1, 10
-    STEPS = 5000
-
+def run_pncg(
+    alpha: float = 1.0,
+    beta: float = 0.42,
+    p: float = 1.0,
+    bsz: int = 1,
+    seqlen: int = 5,
+    steps: int = 500,
+):
     generator = torch.Generator(device=device)
     generator.manual_seed(42)
 
-    state = 2 * torch.randint(
-        0, 2, (B, N),
+    state =  torch.randint(
+        0, 2, (bsz, seqlen),
         device=device,
         dtype=torch.float32,
         generator=generator,
-    ) - 1
+    )
+    state = 2 * state - 1 # (0, 1) -> (-1, 1)
     state.requires_grad_(True)
 
     total_accepted = 0
-    exact_dist = compute_exact_dist(N, BETA)
-    empirical_dist = torch.zeros(2**N, dtype=torch.float32, device='cpu')
+    exact_dist = compute_exact_dist(seqlen, beta)
+    empirical_dist = torch.zeros(2**seqlen, dtype=torch.float32, device='cpu')
     tvds = []
 
-    for i in range(STEPS):
-        state_energy = ncycle_energy(state, beta=BETA)
+    for i in range(steps):
+        if state.grad:
+            state.grad.zero_()
+        state_energy = ncycle_energy(state, beta=beta)
         state_energy.sum().backward()
 
         with torch.no_grad():
-            prop_dist = pncg_dist(state, alpha=ALPHA, p=P)
+            prop_dist = pncg_dist(state, alpha=alpha, p=p)
             sample = pncg_sample(prop_dist)
             sample_prob = prop_prob(sample, prop_dist)
 
         sample = sample.detach().clone().requires_grad_(True)
-        sample_energy = ncycle_energy(sample, beta=BETA)
+        sample_energy = ncycle_energy(sample, beta=beta)
         sample_energy.sum().backward()
 
         with torch.no_grad():
-            prop_dist = pncg_dist(sample, alpha=ALPHA, p=P)
+            prop_dist = pncg_dist(sample, alpha=alpha, p=p)
             state_prob = prop_prob(state, prop_dist)
 
         accept_index = mh_accept(
@@ -117,6 +126,9 @@ if __name__ == '__main__':
         empirical_dist[state_to_index(state)[0]] += 1
         tvds.append(tvd(exact_dist, empirical_dist / empirical_dist.sum()))
 
-    plt.plot(np.arange(STEPS), tvds)
+    plt.plot(np.arange(steps), tvds)
     plt.yticks(np.arange(0, 1 + 0.05, 0.05))
     plt.show()
+
+if __name__ == '__main__':
+    fire.Fire(run_pncg)
