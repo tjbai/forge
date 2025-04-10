@@ -1,26 +1,24 @@
 *
 !.gitignore
 
-# code
 !forge
-!forge/**.py
-!slurm
-!slurm/**
-!slurm/**.py
-!slurm/**.sh
+!forge/**
+!forge/**/*.py
+
 !repl
 !repl/**
 !repl/**.py
 
-# data
+!slurm/
+!slurm/**
+slurm/**/*.out
+slurm/**/*.slurm
+
 !dumps
 !dumps/**
 !dumps/**.{json,jsonl}
 
-# misc
 !README.md
-
-# uv
 !pyproject.toml
 !uv.lock
 !.python-version
