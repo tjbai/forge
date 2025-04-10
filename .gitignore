@@ -22,3 +22,5 @@ slurm/**/*.slurm
 !pyproject.toml
 !uv.lock
 !.python-version
+
+**__pycache__

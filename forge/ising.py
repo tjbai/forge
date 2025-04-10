@@ -137,7 +137,7 @@ def run_mtm_pncg(
 
     total_accepted = 0
     exact_dist = compute_exact_dist(seqlen, beta)
-    empirical_dist = torch.zeros(2**seqlen, dtype=torch.float32, device='cpu')
+    empirical_dist = torch.zeros(2**seqlen, dtype=torch.float32, device=device)
     tvds = []
 
     s = time.time()
@@ -213,7 +213,7 @@ def run_pncg(
 
     total_accepted = 0
     exact_dist = compute_exact_dist(seqlen, beta)
-    empirical_dist = torch.zeros(2**seqlen, dtype=torch.float32, device='cpu')
+    empirical_dist = torch.zeros(2**seqlen, dtype=torch.float32, device=device)
     tvds = []
 
     s = time.time()
