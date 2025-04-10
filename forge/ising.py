@@ -13,7 +13,7 @@ from tqdm import tqdm
 
 # TODO -- reproducible preamble
 
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
+device = 'cuda' if torch.cuda.is_available() else 'mps'
 VOCAB = torch.tensor([[[-1., 1.]]], device=device)
 V = VOCAB.shape[-1]
 
@@ -69,9 +69,9 @@ def state_to_index(state: torch.Tensor) -> List[int]:
 
 @lru_cache(maxsize=None)
 def compute_exact_dist(n: int, beta: float):
-    energy = torch.zeros(2**n, dtype=torch.float32, device='cpu')
+    energy = torch.zeros(2**n, dtype=torch.float32, device=device)
     for _state in tqdm(product(VOCAB.squeeze().tolist(), repeat=n), desc='computing exact distribution', total=2**n):
-        state = torch.tensor([_state], device='cpu')
+        state = torch.tensor([_state], device=device)
         energy[state_to_index(state)[0]] = ncycle_energy(state, beta=beta)[0].item()
     return F.softmax(-energy, dim=0)
 
