@@ -1,6 +1,7 @@
 import time
 from typing import List
 from itertools import product
+from functools import lru_cache
 
 import torch
 import torch.nn.functional as F
@@ -66,6 +67,7 @@ def state_to_index(state: torch.Tensor) -> List[int]:
         acc += index[:, i] * (base ** i)
     return acc.tolist()
 
+@lru_cache(maxsize=None)
 def compute_exact_dist(n: int, beta: float):
     energy = torch.zeros(2**n, dtype=torch.float32, device='cpu')
     for _state in tqdm(product(VOCAB.squeeze().tolist(), repeat=n), desc='computing exact distribution', total=2**n):
@@ -89,6 +91,37 @@ def init_state(bsz: int, seqlen: int, seed: int):
     state.requires_grad_(True)
     return state
 
+def plot_run(
+    exact_dist: torch.Tensor,
+    empirical_dist: torch.Tensor,
+    tvds: List[int],
+    wallclock: float,
+    steps: int,
+    seqlen: int,
+    total_accepted: int,
+):
+    sns.set_theme(style='whitegrid')
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(12, 4))
+
+    indices = np.arange(len(exact_dist))
+    ax1.plot(indices, exact_dist, linewidth=0.5)
+    ax1.fill_between(indices, 0, exact_dist, alpha=0.3)
+    ax1.set_title('Exact Distribution')
+
+    ax2.plot(indices, empirical_dist, linewidth=0.5)
+    ax2.fill_between(indices, 0, empirical_dist, alpha=0.3)
+    ax2.set_title('Empirical Distribution')
+
+    ax3.plot(np.arange(steps), tvds)
+    ax3.grid(axis='y', linestyle='--', alpha=0.7)
+    ax3.set_ylim(0, 0.5)
+    ax3.set_yticks(np.arange(0, 0.5 + 0.05, 0.05))
+    ax3.set_title('TVD')
+
+    fig.text(0.05, 0.05, f'n={seqlen}, steps={steps}, runtime={wallclock:.3f}s, sps={steps / wallclock:.3f}, accepted={total_accepted / steps:.2f}')
+    plt.tight_layout(pad=3)
+    plt.show()
+
 def run_mtm_pncg(
     alpha: float = 1.0,
     beta: float = 0.42,
@@ -97,6 +130,7 @@ def run_mtm_pncg(
     seqlen: int = 5,
     steps: int = 500,
     seed: int = 42,
+    quiet: bool = False
 ):
     assert num_samples > 1
     x = init_state(1, seqlen, seed) # too lazy to do bsz > 1 and num_samples > 1
@@ -107,7 +141,7 @@ def run_mtm_pncg(
     tvds = []
 
     s = time.time()
-    for i in tqdm(range(steps)):
+    for i in tqdm(range(steps), disable=quiet):
         assert x.grad is None
         x_energy = ncycle_energy(x, beta=beta)
         x_energy.sum().backward()
@@ -158,28 +192,12 @@ def run_mtm_pncg(
         empirical_dist[state_to_index(x)[0]] += 1
         tvds.append(tvd(exact_dist, empirical_dist / empirical_dist.sum()))
 
-    sns.set_theme(style='whitegrid')
-    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(12, 4))
-
-    indices = np.arange(len(exact_dist))
-    ax1.plot(indices, exact_dist, linewidth=0.5)
-    ax1.fill_between(indices, 0, exact_dist, alpha=0.3)
-    ax1.set_title('Exact Distribution')
-
-    ax2.plot(indices, empirical_dist, linewidth=0.5)
-    ax2.fill_between(indices, 0, empirical_dist, alpha=0.3)
-    ax2.set_title('Empirical Distribution')
-
-    ax3.plot(np.arange(steps), tvds)
-    ax3.grid(axis='y', linestyle='--', alpha=0.7)
-    ax3.set_ylim(0, 0.5)
-    ax3.set_yticks(np.arange(0, 0.5 + 0.05, 0.05))
-    ax3.set_title('TVD')
-
-    wallclock = time.time() - s
-    fig.text(0.05, 0.05, f'n={seqlen}, steps={steps}, runtime={wallclock:.3f}s, sps={steps / wallclock:.3f}, accepted={total_accepted / steps:.2f}')
-    plt.tight_layout(pad=3)
-    plt.show()
+    return {
+        'tvds': tvds,
+        'empirical_dist': empirical_dist,
+        'wallclock': time.time() - s,
+        'accept_rate': total_accepted / steps,
+    }
 
 def run_pncg(
     alpha: float = 1.0,
@@ -189,6 +207,7 @@ def run_pncg(
     seqlen: int = 5,
     steps: int = 500,
     seed: int = 42,
+    quiet: bool = False,
 ):
     state = init_state(bsz, seqlen, 42)
 
@@ -198,7 +217,7 @@ def run_pncg(
     tvds = []
 
     s = time.time()
-    for i in tqdm(range(steps)):
+    for i in tqdm(range(steps), disable=quiet):
         assert state.grad is None
         state_energy = ncycle_energy(state, beta=beta)
         state_energy.sum().backward()
@@ -234,28 +253,12 @@ def run_pncg(
         empirical_dist[state_to_index(state)[0]] += 1
         tvds.append(tvd(exact_dist, empirical_dist / empirical_dist.sum()))
 
-    sns.set_theme(style='whitegrid')
-    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(12, 4))
-
-    indices = np.arange(len(exact_dist))
-    ax1.plot(indices, exact_dist, linewidth=0.5)
-    ax1.fill_between(indices, 0, exact_dist, alpha=0.3)
-    ax1.set_title('Exact Distribution')
-
-    ax2.plot(indices, empirical_dist, linewidth=0.5)
-    ax2.fill_between(indices, 0, empirical_dist, alpha=0.3)
-    ax2.set_title('Empirical Distribution')
-
-    ax3.plot(np.arange(steps), tvds)
-    ax3.grid(axis='y', linestyle='--', alpha=0.7)
-    ax3.set_ylim(0, 0.5)
-    ax3.set_yticks(np.arange(0, 0.5 + 0.05, 0.05))
-    ax3.set_title('TVD')
-
-    wallclock = time.time() - s
-    fig.text(0.05, 0.05, f'n={seqlen}, steps={steps}, runtime={wallclock:.3f}s, sps={steps / wallclock:.3f}, accepted={total_accepted / steps:.2f}')
-    plt.tight_layout(pad=3)
-    plt.show()
+    return {
+        'tvds': tvds,
+        'empirical_dist': empirical_dist,
+        'wallclock': time.time() - s,
+        'accept_rate': total_accepted / steps,
+    }
 
 if __name__ == '__main__':
     # fire.Fire(run_pncg)

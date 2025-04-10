@@ -8,7 +8,12 @@ dependencies = [
     "fire>=0.7.0",
     "matplotlib>=3.10.1",
     "numpy>=2.2.4",
+    "pandas>=2.2.3",
     "seaborn>=0.13.2",
     "tqdm>=4.67.1",
     "transformers>=4.51.1",
 ]
+
+[tool.setuptools]
+packages = ["forge"]
+
