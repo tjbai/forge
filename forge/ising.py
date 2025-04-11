@@ -239,7 +239,7 @@ def run_pncg(
             state, state_energy, state_prob,
             sample, sample_energy, sample_prob
         )
-        total_accepted += accept_index.sum()
+        total_accepted += accept_index.sum().item()
 
         with torch.no_grad():
             state = torch.where(

@@ -27,11 +27,11 @@ for seqlen in [4, 8, 16]:
                 'seqlen': seqlen,
                 'alpha': alpha,
                 'seed': seed,
-                'final_tvd': final_tvd,
-                'avg_tail_tvd': avg_tail_tvd,
-                'accept_rate': res['accept_rate'],
+                'final_tvd': float(final_tvd),
+                'avg_tail_tvd': float(avg_tail_tvd),
+                'accept_rate': float(res['accept_rate']),
                 'wallclock': res['wallclock']
             })
 
-with open('dumps/ising/tune_pncg.json', 'w') as f:
-    json.dump(mtm_results, f)
+        with open('dumps/ising/tune_pncg.json', 'w') as f:
+            json.dump(mtm_results, f)
