@@ -18,9 +18,13 @@ slurm/**/*.slurm
 !dumps/**
 !dumps/**.{json,jsonl}
 
+!LOG.md
 !README.md
 !pyproject.toml
 !uv.lock
 !.python-version
 
 **__pycache__
+
+!figures
+!figures/*.png
