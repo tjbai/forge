@@ -49,3 +49,11 @@ If we extend to mt-QUEST then the natural question is how to sample the parallel
 
 Basically, p-NCG is somewhat blind to coherence but has fast proposal steps. QUEST is somewhat blind to reward and is expensive.
 It does seem like there should be something SMC-like to bridge the gap?
+
+## 4/14: ed5990f96ce776dbf5f944b4bdcec6a1a0f614ea
+
+Realizing that MTM might also just not work because we absolutely blow up the memory requirements.
+Computing the entire proposal distribution naively requires materializing a (B, N, V, E) size tensor.
+At B=1, N=20, V=50000, E=768, and float32, this is pushing 25GB. Need to mess around at either fp16 or bf16. Maybe lower.
+
+Also, caught a bug in the Ising model experiments, though I'm not sure how much they'll touch downstream results.
