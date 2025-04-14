@@ -94,12 +94,102 @@ def init_pncg_state(bsz: int, seqlen: int, seed: int):
     # state_ids[:, 0] = tokenizer.bos_token_id # NOTE -- gpt-2 doesn't have bos token
     return state_ids
 
+def run_mtm_pncg(
+    alpha: float = 1.0,
+    beta: float = 0.42,
+    p: float = 1.0,
+    num_samples: int = 4,
+    seqlen: int = 5,
+    steps: int = 500,
+    seed: int = 42,
+    quiet: bool = False
+):
+    assert num_samples > 1
+    wandb.init(
+        project='mcmc',
+        config={
+            'method': 'mtm_pncg',
+            'alpha': alpha,
+            'beta': beta,
+            'p': p,
+            'seqlen': seqlen,
+            'steps': steps,
+            'seed': seed,
+            'num_samples': num_samples,
+        }
+    )
+
+    x = init_pncg_state(1, seqlen, seed)
+
+    s = time.time()
+    energies = []
+    states = []
+    total_accepted = 0
+    for i in tqdm(range(steps), disable=quiet):
+        x_embeds = get_embeddings(x).detach().clone().requires_grad_(True)
+        x_energy = lm_energy(x, x_embeds)
+        x_energy.sum().backward()
+
+        energies.append(x_energy.item())
+        states.append(x.squeeze().tolist())
+        wandb.log({'energy': energies[-1]})
+
+        with torch.no_grad():
+            prop_dist = pncg_dist(x_embeds, x_embeds.grad, alpha=alpha, p=p)
+            ys = pncg_sample(prop_dist, k=num_samples).squeeze(0) # (K, N)
+
+        ys_embeds = get_embeddings(ys).detach().clone().requires_grad_(True)
+        y_energies = lm_energy(ys, ys_embeds)
+        y_energies.sum().backward()
+
+        with torch.no_grad():
+            prop_dist = pncg_dist(ys_embeds, ys_embeds.grad, alpha=alpha, p=p) # (K, N, V)
+            txy = prop_prob(x, prop_dist).squeeze(0) # (K,)
+            log_forward_weights = txy - y_energies
+
+        selected_idx = torch.multinomial(
+            F.softmax(log_forward_weights, dim=0),
+            num_samples=1
+        ).squeeze()
+
+        with torch.no_grad():
+            yk_prop_dist = pncg_dist(
+                ys_embeds[selected_idx].unsqueeze(0),
+                ys_embeds.grad[selected_idx].unsqueeze(0),
+                alpha=alpha, p=p
+            )
+            ref_xs = pncg_sample(yk_prop_dist, k=num_samples-1).squeeze(0) # (K-1, N)
+
+        ref_set = torch.cat((x, ref_xs), dim=0)
+        ref_set_embeds = get_embeddings(ref_set).detach().clone().requires_grad_(True)
+        ref_set_energies = lm_energy(ref_set, ref_set_embeds)
+        ref_set_energies.sum().backward()
+
+        with torch.no_grad():
+            prop_dist = pncg_dist(ref_set_embeds, ref_set_embeds.grad, alpha=alpha, p=p)
+            tyx = prop_prob(ys[selected_idx].unsqueeze(0), prop_dist).squeeze(0)
+            log_reverse_weights = tyx - ref_set_energies
+
+        log_accept_ratio = torch.logsumexp(log_forward_weights, dim=0) - torch.logsumexp(log_reverse_weights, dim=0)
+        accept_prob = torch.clamp(torch.exp(log_accept_ratio), max=1.0)
+
+        if torch.rand(1, device=device) < accept_prob:
+            x = ys[selected_idx].unsqueeze(0).detach().clone()
+            total_accepted += 1
+
+    return {
+        'states': states,
+        'energies': energies,
+        'wallclock': time.time() - s,
+        'accept_rate': total_accepted / steps,
+    }
+
 def run_pncg(
     alpha: float = 4.0,
     beta: float = 1.0,
     p: float = 1.0,
     bsz: int = 1,
-    seqlen: int = 20,
+    seqlen: int = 5,
     steps: int = 500,
     seed: int = 42,
     quiet: bool = False,
@@ -167,4 +257,5 @@ def run_pncg(
     }
 
 if __name__ == '__main__':
-    fire.Fire(run_pncg)
+    fire.Fire(run_mtm_pncg)
+    # fire.Fire(run_pncg)
