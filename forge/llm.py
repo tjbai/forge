@@ -4,10 +4,11 @@ from typing import Optional
 import torch
 import torch.nn.functional as F
 import fire
+import wandb
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from tqdm import tqdm
 
-MODEL_NAME = 'gpt2'
+MODEL_NAME = 'openai-community/gpt2'
 device = 'cuda' if torch.cuda.is_available() else 'mps'
 
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
@@ -103,6 +104,19 @@ def run_pncg(
     seed: int = 42,
     quiet: bool = False,
 ):
+    wandb.init(
+        project='mcmc',
+        config={
+            'method': 'pncg',
+            'alpha': alpha,
+            'beta': beta,
+            'p': p,
+            'seqlen': seqlen,
+            'steps': steps,
+            'seed': seed
+        }
+    )
+
     state = init_state(bsz, seqlen, seed)
 
     s = time.time()
@@ -115,8 +129,9 @@ def run_pncg(
         state_energy.sum().backward()
         state_grad = state_embeds.grad
 
-        energies.append(state_energy)
+        energies.append(state_energy.item())
         states.append(state.squeeze().tolist())
+        wandb.log({'energy': energies[-1]})
 
         with torch.no_grad():
             prop_dist_forward = pncg_dist(state_embeds, state_grad, alpha=alpha, p=p)

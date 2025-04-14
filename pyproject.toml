@@ -15,6 +15,7 @@ dependencies = [
     "torch>=2.6.0",
     "tqdm>=4.67.1",
     "transformers>=4.51.1",
+    "wandb>=0.19.9",
 ]
 
 [tool.setuptools]
