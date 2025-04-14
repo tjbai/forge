@@ -165,7 +165,7 @@ def run_mtm_pncg(
         ).item()
 
         yk = ys[selected_idx].unsqueeze(0).detach().clone().requires_grad_(True) # (1, N)
-        yk.grad = ys.grad[0].unsqueeze(0).detach().clone()
+        yk.grad = ys.grad[selected_idx].unsqueeze(0).detach().clone()
 
         with torch.no_grad():
             yk_prop_dist = pncg_dist(yk, alpha=alpha, p=p)
