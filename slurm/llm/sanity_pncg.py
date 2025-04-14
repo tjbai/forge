@@ -1,5 +1,5 @@
 import json
-from forge.llm import run_pncg
+from forge.pncg import run_pncg
 
 results = run_pncg(
     alpha=4.0,

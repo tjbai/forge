@@ -1,11 +1,10 @@
 import json
-from forge.llm import run_mtm_pncg
+from forge.pncg import run_mtm_pncg
 
 results = run_mtm_pncg(
     alpha=4.0,
     beta=1.0,
     p=1.0,
-    bsz=1,
     seqlen=20,
     steps=50_000,
     seed=42,
