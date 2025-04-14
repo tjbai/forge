@@ -21,7 +21,7 @@ EMBEDDINGS = model.get_input_embeddings().weight.detach() # (V, E)
 def get_embeddings(token_ids: torch.Tensor):
     return model.get_input_embeddings()(token_ids)
 
-def energy(
+def lm_energy(
     state: torch.Tensor,
     state_embeddings: torch.Tensor,
     attn_mask: Optional[torch.Tensor] = None,
@@ -87,7 +87,7 @@ def prop_prob(
     log_probs = torch.gather(prop_dist, dim=3, index=state)          # (B_1, B_2, N, 1)
     return torch.sum(log_probs, dim=2).squeeze(2)                    # (B_1, B_2)
 
-def init_state(bsz: int, seqlen: int, seed: int):
+def init_pncg_state(bsz: int, seqlen: int, seed: int):
     generator = torch.Generator(device=device)
     generator.manual_seed(seed)
     state_ids = torch.randint(0, VOCAB_SIZE, (bsz, seqlen), device=device, generator=generator)
@@ -117,7 +117,7 @@ def run_pncg(
         }
     )
 
-    state = init_state(bsz, seqlen, seed)
+    state = init_pncg_state(bsz, seqlen, seed)
 
     s = time.time()
     energies = []
@@ -125,7 +125,7 @@ def run_pncg(
     total_accepted = 0
     for i in tqdm(range(steps), disable=quiet):
         state_embeds = get_embeddings(state).detach().clone().requires_grad_(True)
-        state_energy = energy(state, state_embeds)
+        state_energy = lm_energy(state, state_embeds)
         state_energy.sum().backward()
         state_grad = state_embeds.grad
 
@@ -140,7 +140,7 @@ def run_pncg(
             log_prob_forward = torch.diag(log_prob_forward)
 
         sample_embeds = get_embeddings(samples).detach().clone().requires_grad_(True)
-        sample_energy = energy(samples, sample_embeds)
+        sample_energy = lm_energy(samples, sample_embeds)
         sample_energy.sum().backward()
         sample_grad = sample_embeds.grad.detach().clone()
 

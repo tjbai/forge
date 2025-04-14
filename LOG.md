@@ -35,4 +35,17 @@ mt-pNCG:
     Accept rate: 89.28%
     Wallclock: 3.1897s
 
-NOTE: QAlign solely compares performance against test-time FLOPs, but this probably isn't a fair comparison because FLOPs can be parallelized...if we consider something like MFU that normalizes for utilization then the results probably end up worse?
+NOTE (1): QAlign solely compares performance against test-time FLOPs, but this probably isn't a fair comparison because FLOPs can be parallelized...if we consider something like MFU that normalizes for utilization then the results probably end up worse?
+
+## 4/13: 55c119992a2f5155a0fc20415471932c9cc895fc
+
+Early mixing time for GPT-2 unconditional sampling is many orders of magnitudes worse than Figure 3.
+
+Another thought on QAlign. Appendix B describes that the expected FLOPs is half with QUEST + KV caching. Basically, all their top-level numbers compare N independent samples vs. 2N MCMC samples. This is a fair comparison but doesn't dodge the criticism in (1).
+
+Maybe we can start with the toy problem described in QUEST Appendix C.1.
+
+If we extend to mt-QUEST then the natural question is how to sample the parallel sequences. There's actually a beautiful way this might tie in with causal cross-attention (or related methods) because a reasonable criterion seems to be to sample diverse sequences.
+
+Basically, p-NCG is somewhat blind to coherence but has fast proposal steps. QUEST is somewhat blind to reward and is expensive.
+It does seem like there should be something SMC-like to bridge the gap?
