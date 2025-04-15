@@ -8,33 +8,34 @@ import wandb
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from tqdm import tqdm
 
-MODEL_NAME = 'openai-community/gpt2'
 device = 'cuda' if torch.cuda.is_available() else 'mps'
 
-tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-model = AutoModelForCausalLM.from_pretrained(MODEL_NAME).to(device).eval()
+def log(d):
+    wandb.log(d) if wandb.run is not None else print(d)
 
-VOCAB_SIZE = model.config.vocab_size
-EMBEDDING_DIM = model.config.hidden_size
-EMBEDDINGS = model.get_input_embeddings().weight.detach() # (V, E)
-
-def get_embeddings(token_ids: torch.Tensor):
+def get_embeddings(model, token_ids: torch.Tensor):
     return model.get_input_embeddings()(token_ids)
 
 def lm_energy(
+    model: AutoModelForCausalLM,
     state: torch.Tensor,
     state_embeddings: torch.Tensor,
     attn_mask: Optional[torch.Tensor] = None,
+    beta: float = 1.0,
 ) -> torch.Tensor:
     B, N, E = state_embeddings.shape
-    outputs = model(inputs_embeds=state_embeddings, attention_mask=attn_mask, return_dict=True)
+    outputs = model( # type: ignore
+        inputs_embeds=state_embeddings,
+        attention_mask=attn_mask,
+        return_dict=True
+    )
     logits = outputs.logits # (B, N, V)
 
     # TODO -- think about EOS here
     dists = logits[:, :-1, :].contiguous()      # (B, N-1, V)
     labels = state[:, 1:].contiguous()          # (B, N-1)
     neg_log_probs = F.cross_entropy(            # (B,)
-        dists.view(-1, VOCAB_SIZE),
+        dists.view(-1, model.config.vocab_size),
         labels.view(-1),
         reduction='none',
     ).view(B, N-1).sum(dim=1)
@@ -42,15 +43,17 @@ def lm_energy(
     return neg_log_probs
 
 def pncg_dist(
+    embeddings: torch.Tensor,       # (V, E)
     state_embeddings: torch.Tensor, # (B, N, E)
     gradients: torch.Tensor,        # (B, N, E)
     alpha: float = 1.0,
     p: float = 1.0,
 ):
+    V, E, = embeddings.shape
     diffs = (
-        EMBEDDINGS.view(1, 1, VOCAB_SIZE, EMBEDDING_DIM) # (1, 1, V, E)
-        - state_embeddings.unsqueeze(2)                  # (B, N, E) -> (B, N, 1, E)
-    )                                                    # (B, N, V, E)
+        embeddings.view(1, 1, V, E)     # (1, 1, V, E)
+        - state_embeddings.unsqueeze(2) # (B, N, E) -> (B, N, 1, E)
+    )                                   # (B, N, V, E)
 
     means = -1/2 * torch.einsum( # (B, N, V)
         'bnve,bnke->bnv',
@@ -69,8 +72,8 @@ def pncg_dist(
     return F.log_softmax(means + norms, dim=-1) # (B, N, V)
 
 def pncg_sample(prop_dist: torch.Tensor, k: int = 1):
-    B, N, _ = prop_dist.shape
-    flat_dist = prop_dist.reshape(-1, VOCAB_SIZE) # (BN, V)
+    B, N, V = prop_dist.shape
+    flat_dist = prop_dist.reshape(-1, V) # (BN, V)
     if k == 1:
         flat_indices = torch.multinomial(torch.exp(flat_dist), num_samples=1).squeeze(-1) # (BN,)
         return flat_indices.reshape(B, N)
@@ -81,20 +84,21 @@ def prop_prob(
     state: torch.Tensor,    # (B_1, N)
     prop_dist: torch.Tensor # (B_2, N, V)
 ):
-    B_2, *_ = prop_dist.shape
+    (B_1, _), (B_2, *_) = state.shape, prop_dist.shape
     state = state.unsqueeze(1).unsqueeze(-1).expand(-1, B_2, -1, -1) # (B_1, B_2, N, 1)
-    prop_dist = prop_dist.unsqueeze(0)                               # (1, B_2, N, V)
+    prop_dist = prop_dist.unsqueeze(0).expand(B_1, -1, -1, -1)       # (B_1, B_2, N, V)
     log_probs = torch.gather(prop_dist, dim=3, index=state)          # (B_1, B_2, N, 1)
     return torch.sum(log_probs, dim=2).squeeze(2)                    # (B_1, B_2)
 
-def init_pncg_state(bsz: int, seqlen: int, seed: int):
+def init_pncg_state(bsz: int, seqlen: int, seed: int, vocab_size: int):
     generator = torch.Generator(device=device)
     generator.manual_seed(seed)
-    state_ids = torch.randint(0, VOCAB_SIZE, (bsz, seqlen), device=device, generator=generator)
+    state_ids = torch.randint(0, vocab_size, (bsz, seqlen), device=device, generator=generator)
     # state_ids[:, 0] = tokenizer.bos_token_id # NOTE -- gpt-2 doesn't have bos token
     return state_ids
 
 def run_mtm_pncg(
+    model_name: str = 'openai-community/gpt2',
     alpha: float = 1.0,
     beta: float = 0.42,
     p: float = 1.0,
@@ -102,48 +106,53 @@ def run_mtm_pncg(
     seqlen: int = 5,
     steps: int = 500,
     seed: int = 42,
-    quiet: bool = False
+    quiet: bool = False,
+    init_wandb: bool = False,
 ):
-    assert num_samples > 1
-    wandb.init(
-        project='mcmc',
-        config={
-            'method': 'mtm_pncg',
-            'alpha': alpha,
-            'beta': beta,
-            'p': p,
-            'seqlen': seqlen,
-            'steps': steps,
-            'seed': seed,
-            'num_samples': num_samples,
-        }
-    )
+    model = AutoModelForCausalLM.from_pretrained(model_name).to(device).eval()
+    embeddings = model.get_input_embeddings().weight.detach()
+    vocab_size = embeddings.shape[0]
 
-    x = init_pncg_state(1, seqlen, seed)
+    if init_wandb:
+        wandb.init(
+            project='mcmc',
+            config={
+                'method': 'mtm_pncg',
+                'alpha': alpha,
+                'beta': beta,
+                'p': p,
+                'seqlen': seqlen,
+                'steps': steps,
+                'seed': seed,
+                'num_samples': num_samples,
+            }
+        )
+
+    x = init_pncg_state(1, seqlen, seed, vocab_size)
 
     s = time.time()
     energies = []
     states = []
     total_accepted = 0
     for i in tqdm(range(steps), disable=quiet):
-        x_embeds = get_embeddings(x).detach().clone().requires_grad_(True)
-        x_energy = lm_energy(x, x_embeds)
+        x_embeds = get_embeddings(model, x).detach().clone().requires_grad_(True)
+        x_energy = lm_energy(model, x, x_embeds, beta=beta)
         x_energy.sum().backward()
 
         energies.append(x_energy.item())
         states.append(x.squeeze().tolist())
-        wandb.log({'energy': energies[-1]})
+        log({'energy': energies[-1]})
 
         with torch.no_grad():
-            prop_dist = pncg_dist(x_embeds, x_embeds.grad, alpha=alpha, p=p)
+            prop_dist = pncg_dist(embeddings, x_embeds, x_embeds.grad, alpha=alpha, p=p)
             ys = pncg_sample(prop_dist, k=num_samples).squeeze(0) # (K, N)
 
-        ys_embeds = get_embeddings(ys).detach().clone().requires_grad_(True)
-        y_energies = lm_energy(ys, ys_embeds)
+        ys_embeds = get_embeddings(model, ys).detach().clone().requires_grad_(True)
+        y_energies = lm_energy(model, ys, ys_embeds, beta=beta)
         y_energies.sum().backward()
 
         with torch.no_grad():
-            prop_dist = pncg_dist(ys_embeds, ys_embeds.grad, alpha=alpha, p=p) # (K, N, V)
+            prop_dist = pncg_dist(embeddings, ys_embeds, ys_embeds.grad, alpha=alpha, p=p) # (K, N, V)
             txy = prop_prob(x, prop_dist).squeeze(0) # (K,)
             log_forward_weights = txy - y_energies
 
@@ -154,6 +163,7 @@ def run_mtm_pncg(
 
         with torch.no_grad():
             yk_prop_dist = pncg_dist(
+                embeddings,
                 ys_embeds[selected_idx].unsqueeze(0),
                 ys_embeds.grad[selected_idx].unsqueeze(0),
                 alpha=alpha, p=p
@@ -161,12 +171,12 @@ def run_mtm_pncg(
             ref_xs = pncg_sample(yk_prop_dist, k=num_samples-1).squeeze(0) # (K-1, N)
 
         ref_set = torch.cat((x, ref_xs), dim=0)
-        ref_set_embeds = get_embeddings(ref_set).detach().clone().requires_grad_(True)
-        ref_set_energies = lm_energy(ref_set, ref_set_embeds)
+        ref_set_embeds = get_embeddings(model, ref_set).detach().clone().requires_grad_(True)
+        ref_set_energies = lm_energy(model, ref_set, ref_set_embeds, beta=beta)
         ref_set_energies.sum().backward()
 
         with torch.no_grad():
-            prop_dist = pncg_dist(ref_set_embeds, ref_set_embeds.grad, alpha=alpha, p=p)
+            prop_dist = pncg_dist(embeddings, ref_set_embeds, ref_set_embeds.grad, alpha=alpha, p=p)
             tyx = prop_prob(ys[selected_idx].unsqueeze(0), prop_dist).squeeze(0)
             log_reverse_weights = tyx - ref_set_energies
 
@@ -185,6 +195,7 @@ def run_mtm_pncg(
     }
 
 def run_pncg(
+    model_name: str = 'openai-community/gpt2',
     alpha: float = 4.0,
     beta: float = 1.0,
     p: float = 1.0,
@@ -193,49 +204,55 @@ def run_pncg(
     steps: int = 500,
     seed: int = 42,
     quiet: bool = False,
+    init_wandb: bool = False,
 ):
-    wandb.init(
-        project='mcmc',
-        config={
-            'method': 'pncg',
-            'alpha': alpha,
-            'beta': beta,
-            'p': p,
-            'seqlen': seqlen,
-            'steps': steps,
-            'seed': seed
-        }
-    )
+    model = AutoModelForCausalLM.from_pretrained(model_name).to(device).eval()
+    embeddings = model.get_input_embeddings().weight.detach()
+    vocab_size = embeddings.shape[0]
 
-    state = init_pncg_state(bsz, seqlen, seed)
+    if init_wandb:
+        wandb.init(
+            project='mcmc',
+            config={
+                'method': 'pncg',
+                'alpha': alpha,
+                'beta': beta,
+                'p': p,
+                'seqlen': seqlen,
+                'steps': steps,
+                'seed': seed
+            }
+        )
+
+    state = init_pncg_state(bsz, seqlen, seed, vocab_size)
 
     s = time.time()
     energies = []
     states = []
     total_accepted = 0
     for i in tqdm(range(steps), disable=quiet):
-        state_embeds = get_embeddings(state).detach().clone().requires_grad_(True)
-        state_energy = lm_energy(state, state_embeds)
+        state_embeds = get_embeddings(model, state).detach().clone().requires_grad_(True)
+        state_energy = lm_energy(model, state, state_embeds, beta=beta)
         state_energy.sum().backward()
         state_grad = state_embeds.grad
 
         energies.append(state_energy.item())
         states.append(state.squeeze().tolist())
-        wandb.log({'energy': energies[-1]})
+        log({'energy': energies[-1]})
 
         with torch.no_grad():
-            prop_dist_forward = pncg_dist(state_embeds, state_grad, alpha=alpha, p=p)
+            prop_dist_forward = pncg_dist(embeddings, state_embeds, state_grad, alpha=alpha, p=p)
             samples = pncg_sample(prop_dist_forward)
             log_prob_forward = prop_prob(samples, prop_dist_forward)
             log_prob_forward = torch.diag(log_prob_forward)
 
-        sample_embeds = get_embeddings(samples).detach().clone().requires_grad_(True)
-        sample_energy = lm_energy(samples, sample_embeds)
+        sample_embeds = get_embeddings(model, samples).detach().clone().requires_grad_(True)
+        sample_energy = lm_energy(model, samples, sample_embeds)
         sample_energy.sum().backward()
         sample_grad = sample_embeds.grad.detach().clone()
 
         with torch.no_grad():
-            prop_dist_reverse = pncg_dist(sample_embeds, sample_grad, alpha=alpha, p=p)
+            prop_dist_reverse = pncg_dist(embeddings, sample_embeds, sample_grad, alpha=alpha, p=p)
             log_prob_reverse = prop_prob(state, prop_dist_reverse)
             log_prob_reverse = torch.diag(log_prob_reverse)
 
