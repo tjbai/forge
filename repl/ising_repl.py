@@ -1,43 +1,61 @@
-# %%
-import json
-import pandas as pd
-from tabulate import tabulate
+# # %%
+# import json
+# import pandas as pd
+# from tabulate import tabulate
 
-with open('dumps/ising/tune_mtm_pncg.json') as f:
-    mtm_results = json.load(f)
+# with open('dumps/ising/tune_mtm_pncg.json') as f:
+#     mtm_results = json.load(f)
 
-df = pd.DataFrame(mtm_results)
+# df = pd.DataFrame(mtm_results)
 
-agg_df = df.groupby(['seqlen', 'num_samples', 'alpha']).agg(
-    mean_final_tvd=('final_tvd', 'mean'),
-    std_final_tvd=('final_tvd', 'std'),
-    mean_accept_rate=('accept_rate', 'mean'),
-    mean_wallclock=('wallclock', 'mean')
-).reset_index()
+# agg_df = df.groupby(['seqlen', 'num_samples', 'alpha']).agg(
+#     mean_final_tvd=('final_tvd', 'mean'),
+#     std_final_tvd=('final_tvd', 'std'),
+#     mean_accept_rate=('accept_rate', 'mean'),
+#     mean_wallclock=('wallclock', 'mean')
+# ).reset_index()
 
-def format_table(data):
-    formatted_data = data.copy()
-    formatted_data['alpha'] = formatted_data['alpha'].map(lambda x: f"{x:.4f}")
-    formatted_data['mean_final_tvd'] = formatted_data['mean_final_tvd'].map(lambda x: f"{x:.6f}")
-    formatted_data['std_final_tvd'] = formatted_data['std_final_tvd'].map(lambda x: f"{x:.6f}")
-    formatted_data['mean_accept_rate'] = formatted_data['mean_accept_rate'].map(lambda x: f"{x:.2%}")
-    formatted_data['mean_wallclock'] = formatted_data['mean_wallclock'].map(lambda x: f"{x:.4f}s")
+# def format_table(data):
+#     formatted_data = data.copy()
+#     formatted_data['alpha'] = formatted_data['alpha'].map(lambda x: f"{x:.4f}")
+#     formatted_data['mean_final_tvd'] = formatted_data['mean_final_tvd'].map(lambda x: f"{x:.6f}")
+#     formatted_data['std_final_tvd'] = formatted_data['std_final_tvd'].map(lambda x: f"{x:.6f}")
+#     formatted_data['mean_accept_rate'] = formatted_data['mean_accept_rate'].map(lambda x: f"{x:.2%}")
+#     formatted_data['mean_wallclock'] = formatted_data['mean_wallclock'].map(lambda x: f"{x:.4f}s")
 
-    if 'seqlen' in formatted_data.columns:
-        formatted_data = formatted_data.drop(columns=['seqlen'])
+#     if 'seqlen' in formatted_data.columns:
+#         formatted_data = formatted_data.drop(columns=['seqlen'])
 
-    return formatted_data
+#     return formatted_data
 
-unique_seqlens = sorted(agg_df['seqlen'].unique())
+# unique_seqlens = sorted(agg_df['seqlen'].unique())
 
-for seqlen in unique_seqlens:
-    print(f"\n## Sequence Length = {seqlen}\n")
-    seqlen_data = agg_df[agg_df['seqlen'] == seqlen]
-    seqlen_data = seqlen_data.sort_values(['num_samples', 'alpha'])
-    formatted_data = format_table(seqlen_data)
-    print(tabulate(formatted_data, headers='keys', tablefmt='pipe', showindex=False))
+# best_settings = []
+# for seqlen in unique_seqlens:
+#     seqlen_data = agg_df[agg_df['seqlen'] == seqlen]
+#     best_row = seqlen_data.loc[seqlen_data['mean_final_tvd'].idxmin()]
+#     best_settings.append({
+#         'seqlen': int(best_row['seqlen']),
+#         'num_samples': int(best_row['num_samples']),
+#         'alpha': best_row['alpha'],
+#         'mean_final_tvd': best_row['mean_final_tvd'],
+#         'std_final_tvd': best_row['std_final_tvd'],
+#         'mean_accept_rate': best_row['mean_accept_rate'],
+#         'mean_wallclock': best_row['mean_wallclock'],
+#     })
 
-# %%
+# best_df = pd.DataFrame(best_settings)
+# formatted_best = format_table(best_df)
+# print(tabulate(formatted_best, headers='keys', tablefmt='pipe', showindex=False))
+
+# for seqlen in unique_seqlens:
+#     print(f"\n## Sequence Length = {seqlen}\n")
+#     seqlen_data = agg_df[agg_df['seqlen'] == seqlen]
+#     seqlen_data = seqlen_data.sort_values(['num_samples', 'alpha'])
+#     formatted_data = format_table(seqlen_data)
+#     print(tabulate(formatted_data, headers='keys', tablefmt='pipe', showindex=False))
+
+# # %%
 # import json
 # import pandas as pd
 # import matplotlib.pyplot as plt
@@ -87,7 +105,8 @@ for seqlen in unique_seqlens:
 #     ax.legend()
 
 #     plt.tight_layout()
-#     plt.savefig(f'tvd_vs_alpha_seqlen_{seqlen}.png', dpi=300)
+#     plt.savefig(f'figures/tvd_vs_alpha_seqlen_{seqlen}.png', dpi=300)
+#     # plt.show()
 
 # # %%
 # with open('dumps/ising/tune_pncg.json') as f:

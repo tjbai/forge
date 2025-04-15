@@ -57,3 +57,11 @@ Computing the entire proposal distribution naively requires materializing a (B, 
 At B=1, N=20, V=50000, E=768, and float32, this is pushing 25GB. Need to mess around at either fp16 or bf16. Maybe lower.
 
 Also, caught a bug in the Ising model experiments, though I'm not sure how much they'll touch downstream results.
+
+## 4/14: 6ed4d25773ff9e5a2550b1ddbcfc485de5501639
+
+| seqlen | num_samples | alpha   | mean_final_tvd | std_final_tvd | mean_accept_rate | mean_wallclock |
+|--------|-------------|---------|----------------|---------------|------------------|----------------|
+| 4      | 16          | 28.9024 | 0.055374       | 0.013763      | 89.79%           | 2.5018s        |
+| 8      | 32          | 64      | 0.221579       | 0.008149      | 89.45%           | 2.5624s        |
+| 16     | 32          | 28.9024 | 0.974751       | 0.000836      | 84.14%           | 2.8522s        |
