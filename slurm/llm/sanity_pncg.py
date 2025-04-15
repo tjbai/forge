@@ -1,9 +1,11 @@
 import json
 from forge.pncg import run_pncg
 
-beta = 0.42
+beta = 1.0
 
 results = run_pncg(
+    model_name='openai-community/gpt2',
+    init_wandb=True,
     alpha=4.0,
     beta=beta,
     p=1.0,
