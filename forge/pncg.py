@@ -135,6 +135,7 @@ def run_mtm_pncg(
     seed: int = 42,
     quiet: bool = False,
     init_wandb: bool = False,
+    run_name: str = 'mtm_pncg',
 ):
     model = AutoModelForCausalLM.from_pretrained(model_name).to(device).eval()
     embeddings = model.get_input_embeddings().weight.detach()
@@ -143,6 +144,7 @@ def run_mtm_pncg(
     if init_wandb:
         wandb.init(
             project='mcmc',
+            name=run_name,
             config={
                 'method': 'mtm_pncg',
                 'alpha': alpha,
@@ -232,6 +234,7 @@ def run_pncg(
     seed: int = 42,
     quiet: bool = False,
     init_wandb: bool = False,
+    run_name: str = 'pncg',
 ):
     model = AutoModelForCausalLM.from_pretrained(model_name).to(device).eval()
     embeddings = model.get_input_embeddings().weight.detach()
@@ -240,6 +243,7 @@ def run_pncg(
     if init_wandb:
         wandb.init(
             project='mcmc',
+            name=run_name,
             config={
                 'method': 'pncg',
                 'alpha': alpha,

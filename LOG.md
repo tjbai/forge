@@ -65,3 +65,12 @@ Also, caught a bug in the Ising model experiments, though I'm not sure how much 
 | 4      | 16          | 28.9024 | 0.055374       | 0.013763      | 89.79%           | 2.5018s        |
 | 8      | 32          | 64      | 0.221579       | 0.008149      | 89.45%           | 2.5624s        |
 | 16     | 32          | 28.9024 | 0.974751       | 0.000836      | 84.14%           | 2.8522s        |
+
+## 4/15:
+
+Why is MTM bad?
+1. p=2?
+2. hyperparameters (step size, temperature)
+3. wrong weighting function (lambda(x,y) == 1)
+
+(1) Try single-try with p=2.
