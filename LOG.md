@@ -73,4 +73,8 @@ Why is MTM bad?
 2. hyperparameters (step size, temperature)
 3. wrong weighting function (lambda(x,y) == 1)
 
-(1) Try single-try with p=2.
+(1) try single-try with p=2
+-> works just fine first few hundred steps
+
+(2) hyperparameters
+-> set up wandb sweep

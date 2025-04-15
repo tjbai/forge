@@ -1,4 +1,5 @@
 import time
+import random
 from typing import Optional
 
 import torch
@@ -9,6 +10,16 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from tqdm import tqdm
 
 device = 'cuda' if torch.cuda.is_available() else 'mps'
+
+SEED = 42
+random.seed(SEED)
+torch.manual_seed(SEED)
+torch.use_deterministic_algorithms(True)
+if torch.cuda.is_available():
+    torch.cuda.manual_seed(SEED)
+    torch.cuda.manual_seed_all(SEED)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 def log(d):
     wandb.log(d) if wandb.run is not None else print(d)
@@ -305,5 +316,7 @@ def run_pncg(
     }
 
 if __name__ == '__main__':
-    fire.Fire(run_mtm_pncg)
-    # fire.Fire(run_pncg)
+    fire.Fire({
+        'pncg': run_pncg,
+        'mtm_pncg': run_mtm_pncg,
+    })
