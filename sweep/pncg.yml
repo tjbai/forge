@@ -1,0 +1,26 @@
+program: /home/tbai4/forge/forge/pncg.py
+command:
+  - ${env}
+  - "uv"
+  - "run"
+  - "python"
+  - ${program}
+  - "pncg"
+  - ${args}
+method: bayes
+metric:
+  name: energy_smoothed
+  goal: minimize
+parameters:
+  alpha:
+    distribution: log_uniform_values
+    min: 0.1
+    max: 10.0
+  p:
+    values: [1.0, 2.0]
+  seqlen:
+    value: 20
+  steps:
+    value: 5000
+  beta:
+    value: 1.0

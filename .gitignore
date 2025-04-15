@@ -33,4 +33,4 @@ slurm/**/*.slurm
 !tests/**.py
 
 !sweep
-!swees/**.yml
+!sweep/**.yml
