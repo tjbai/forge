@@ -1,5 +1,6 @@
 import pytest
 import torch
+import torch.nn.functional as F
 from forge.pncg import (
     lm_energy,
     pncg_dist,
@@ -184,3 +185,121 @@ def test_pncg_p2_equivalence(b_size, n_len, v_size, e_dim, alpha_val):
         atol=1e-5,
         rtol=1e-4
     ), f'failed at B={b_size}, N={n_len}, V={v_size}, E={e_dim}, alpha={alpha_val}'
+
+def test_pncg_sample_k1_deterministic():
+    log_probs = torch.tensor([[
+        [-10.0, -10.0, 0.0, -10.0],
+        [-10.0, 0.0, -10.0, -10.0]
+    ]], device=device, dtype=torch.float32)
+    prop_dist = F.log_softmax(log_probs, dim=-1)
+
+    torch.manual_seed(42)
+    samples = pncg_sample(prop_dist, k=1)
+
+    expected_samples = torch.tensor([[2, 1]], device=device, dtype=torch.int64)
+    assert samples.shape == (1, 2)
+    assert torch.equal(samples, expected_samples)
+
+def test_pncg_sample_k_multi_shape_type():
+    B, N, V = 2, 3, 5
+    k = 4
+    prop_dist = torch.randn((B, N, V), device=device, dtype=torch.float32)
+    prop_dist = F.log_softmax(prop_dist, dim=-1)
+
+    torch.manual_seed(123)
+    samples = pncg_sample(prop_dist, k=k)
+
+    assert samples.shape == (B, k, N)
+    assert samples.dtype == torch.int64
+    assert (samples >= 0).all() and (samples < V).all()
+
+def test_pncg_sample_k_multi_deterministic():
+    k=3
+    log_probs = torch.tensor([[
+        [-10.0, -10.0, 0.0, -10.0],
+        [-10.0, 0.0, -10.0, -10.0]
+    ]], device=device, dtype=torch.float32)
+    prop_dist = F.log_softmax(log_probs, dim=-1)
+
+    torch.manual_seed(4242)
+    samples = pncg_sample(prop_dist, k=k)
+
+    expected_samples = torch.tensor([[[2, 1], [2, 1], [2, 1]]], device=device, dtype=torch.int64)
+    assert samples.shape == (1, k, 2)
+    assert torch.equal(samples, expected_samples)
+
+def test_prop_prob_b1_2_b2_1():
+    state = torch.tensor([[0, 1], [1, 0]], device=device)
+    logits = torch.tensor([[
+        [1.0, 0.5, 0.0],
+        [0.0, 0.5, 1.0],
+    ]], device=device)
+    prop_dist = F.log_softmax(logits, dim=-1)
+
+    log_p00 = prop_dist[0, 0, 0].item()
+    log_p01 = prop_dist[0, 1, 1].item()
+    expected_log_prob0 = log_p00 + log_p01
+
+    log_p10 = prop_dist[0, 0, 1].item()
+    log_p11 = prop_dist[0, 1, 0].item()
+    expected_log_prob1 = log_p10 + log_p11
+
+    expected_log_prob = torch.tensor([[expected_log_prob0], [expected_log_prob1]], device=device)
+
+    output_log_prob = prop_prob(state, prop_dist)
+
+    assert output_log_prob.shape == (2, 1)
+    assert torch.allclose(output_log_prob, expected_log_prob, atol=1e-6)
+
+def test_prop_prob_b1_1_b2_2():
+    state = torch.tensor([[0, 1]], device=device)
+    logits1 = torch.tensor([[
+        [1.0, 0.5, 0.0],
+        [0.0, 0.5, 1.0],
+    ]], device=device)
+    prop_dist1 = F.log_softmax(logits1, dim=-1).squeeze(0)
+
+    logits2 = torch.tensor([[
+        [0.0, 0.5, 1.0],
+        [1.0, 0.5, 0.0],
+    ]], device=device)
+    prop_dist2 = F.log_softmax(logits2, dim=-1).squeeze(0)
+
+    prop_dist = torch.stack([prop_dist1, prop_dist2], dim=0)
+
+    log_p00_d0 = prop_dist[0, 0, 0].item()
+    log_p01_d0 = prop_dist[0, 1, 1].item()
+    expected_log_prob_d0 = log_p00_d0 + log_p01_d0
+
+    log_p00_d1 = prop_dist[1, 0, 0].item()
+    log_p01_d1 = prop_dist[1, 1, 1].item()
+    expected_log_prob_d1 = log_p00_d1 + log_p01_d1
+
+    expected_log_prob = torch.tensor([[expected_log_prob_d0, expected_log_prob_d1]], device=device)
+    output_log_prob = prop_prob(state, prop_dist)
+
+    assert output_log_prob.shape == (1, 2)
+    assert torch.allclose(output_log_prob, expected_log_prob, atol=1e-6)
+
+def test_prop_prob_b1_2_b2_2():
+    state = torch.tensor([[0, 1], [1, 0]], device=device)
+    logits1 = torch.tensor([[ [1.0, 0.5, 0.0], [0.0, 0.5, 1.0] ]], device=device)
+    prop_dist1 = F.log_softmax(logits1, dim=-1).squeeze(0)
+    logits2 = torch.tensor([[ [0.0, 0.5, 1.0], [1.0, 0.5, 0.0] ]], device=device)
+    prop_dist2 = F.log_softmax(logits2, dim=-1).squeeze(0)
+    prop_dist = torch.stack([prop_dist1, prop_dist2], dim=0)
+
+    logP_s0_d0 = prop_dist[0, 0, 0].item() + prop_dist[0, 1, 1].item()
+    logP_s0_d1 = prop_dist[1, 0, 0].item() + prop_dist[1, 1, 1].item()
+    logP_s1_d0 = prop_dist[0, 0, 1].item() + prop_dist[0, 1, 0].item()
+    logP_s1_d1 = prop_dist[1, 0, 1].item() + prop_dist[1, 1, 0].item()
+
+    expected_log_prob = torch.tensor([
+        [logP_s0_d0, logP_s0_d1],
+        [logP_s1_d0, logP_s1_d1]
+    ], device=device)
+
+    output_log_prob = prop_prob(state, prop_dist)
+
+    assert output_log_prob.shape == (2, 2)
+    assert torch.allclose(output_log_prob, expected_log_prob, atol=1e-6)
