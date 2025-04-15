@@ -40,7 +40,7 @@ def lm_energy(
         reduction='none',
     ).view(B, N-1).sum(dim=1)
 
-    return neg_log_probs
+    return beta * neg_log_probs
 
 def pncg_dist(
     embeddings: torch.Tensor,       # (V, E)
