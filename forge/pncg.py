@@ -55,8 +55,6 @@ def pncg_dist(
         - state_embeddings.unsqueeze(2) # (B, N, E) -> (B, N, 1, E)
     )                                   # (B, N, V, E)
 
-    print('debug here', gradients.unsqueeze(2).shape, diffs.shape)
-
     means = -1/2 * torch.einsum( # (B, N, V)
         'bnve,bnke->bnv',
         diffs,                   # (B, N, V, E)
@@ -80,7 +78,6 @@ def pncg_dist_p2(
     alpha: float = 1.0,
 ):
     # memory-efficient implementation of pncg_dist for p=2
-
     B, N, E = state_embeddings.shape
     V, _ = embeddings.shape
 
@@ -172,7 +169,7 @@ def run_mtm_pncg(
         log({'energy': energies[-1]})
 
         with torch.no_grad():
-            prop_dist = pncg_dist(embeddings, x_embeds, x_embeds.grad, alpha=alpha, p=p)
+            prop_dist = pncg_dist_p2(embeddings, x_embeds, x_embeds.grad, alpha=alpha, p=p)
             ys = pncg_sample(prop_dist, k=num_samples).squeeze(0) # (K, N)
 
         ys_embeds = get_embeddings(model, ys).detach().clone().requires_grad_(True)
@@ -180,7 +177,7 @@ def run_mtm_pncg(
         y_energies.sum().backward()
 
         with torch.no_grad():
-            prop_dist = pncg_dist(embeddings, ys_embeds, ys_embeds.grad, alpha=alpha, p=p) # (K, N, V)
+            prop_dist = pncg_dist_p2(embeddings, ys_embeds, ys_embeds.grad, alpha=alpha, p=p) # (K, N, V)
             txy = prop_prob(x, prop_dist).squeeze(0) # (K,)
             log_forward_weights = txy - y_energies
 
@@ -190,7 +187,7 @@ def run_mtm_pncg(
         ).squeeze()
 
         with torch.no_grad():
-            yk_prop_dist = pncg_dist(
+            yk_prop_dist = pncg_dist_p2(
                 embeddings,
                 ys_embeds[selected_idx].unsqueeze(0),
                 ys_embeds.grad[selected_idx].unsqueeze(0),
@@ -204,7 +201,7 @@ def run_mtm_pncg(
         ref_set_energies.sum().backward()
 
         with torch.no_grad():
-            prop_dist = pncg_dist(embeddings, ref_set_embeds, ref_set_embeds.grad, alpha=alpha, p=p)
+            prop_dist = pncg_dist_p2(embeddings, ref_set_embeds, ref_set_embeds.grad, alpha=alpha, p=p)
             tyx = prop_prob(ys[selected_idx].unsqueeze(0), prop_dist).squeeze(0)
             log_reverse_weights = tyx - ref_set_energies
 
