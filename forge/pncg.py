@@ -14,7 +14,6 @@ device = 'cuda' if torch.cuda.is_available() else 'mps'
 SEED = 42
 random.seed(SEED)
 torch.manual_seed(SEED)
-torch.use_deterministic_algorithms(True)
 if torch.cuda.is_available():
     torch.cuda.manual_seed(SEED)
     torch.cuda.manual_seed_all(SEED)
@@ -147,6 +146,7 @@ def run_mtm_pncg(
     quiet: bool = False,
     init_wandb: bool = False,
     run_name: str = 'mtm_pncg',
+    ema_lambda: float = 0.0,
 ):
     model = AutoModelForCausalLM.from_pretrained(model_name).to(device).eval()
     embeddings = model.get_input_embeddings().weight.detach()
@@ -172,6 +172,7 @@ def run_mtm_pncg(
 
     s = time.time()
     energies = []
+    ema_energy = None
     states = []
     total_accepted = 0
     for i in tqdm(range(steps), disable=quiet):
@@ -181,7 +182,11 @@ def run_mtm_pncg(
 
         energies.append(x_energy.item())
         states.append(x.squeeze().tolist())
-        log({'energy': energies[-1]})
+        ema_energy = (
+            energies[-1] if ema_energy is None else
+            ema_lambda * ema_energy + (1 - ema_lambda) * energies[-1]
+        )
+        log({'energy': energies[-1], 'ema_energy': ema_energy})
 
         with torch.no_grad():
             prop_dist = pncg_dist_p2(embeddings, x_embeds, x_embeds.grad, alpha=alpha, p=p)
@@ -246,6 +251,7 @@ def run_pncg(
     quiet: bool = False,
     init_wandb: bool = False,
     run_name: str = 'pncg',
+    ema_lambda: float = 0.0,
 ):
     model = AutoModelForCausalLM.from_pretrained(model_name).to(device).eval()
     embeddings = model.get_input_embeddings().weight.detach()
@@ -270,6 +276,7 @@ def run_pncg(
 
     s = time.time()
     energies = []
+    ema_energy = None
     states = []
     total_accepted = 0
     for i in tqdm(range(steps), disable=quiet):
@@ -280,7 +287,11 @@ def run_pncg(
 
         energies.append(state_energy.item())
         states.append(state.squeeze().tolist())
-        log({'energy': energies[-1]})
+        ema_energy = (
+            energies[-1] if ema_energy is None else
+            ema_lambda * ema_energy + (1 - ema_lambda) * energies[-1]
+        )
+        log({'energy': energies[-1], 'ema_energy': ema_energy})
 
         with torch.no_grad():
             prop_dist_forward = pncg_dist(embeddings, state_embeds, state_grad, alpha=alpha, p=p)
@@ -319,4 +330,3 @@ if __name__ == '__main__':
     fire.Fire({
         'pncg': run_pncg,
         'mtm_pncg': run_mtm_pncg,
-    })

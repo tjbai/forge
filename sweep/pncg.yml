@@ -9,7 +9,7 @@ command:
   - ${args}
 method: bayes
 metric:
-  name: energy_smoothed
+  name: ema_energy
   goal: minimize
 parameters:
   alpha:
@@ -24,3 +24,7 @@ parameters:
     value: 5000
   beta:
     value: 1.0
+  ema_lambda:
+    value: 0.99
+  init_wandb:
+    value: true
