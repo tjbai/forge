@@ -77,6 +77,7 @@ def pncg_dist_p2(
     state_embeddings: torch.Tensor,
     gradients: torch.Tensor,
     alpha: float = 1.0,
+    **_,
 ):
     # memory-efficient implementation of pncg_dist for p=2
     B, N, E = state_embeddings.shape
