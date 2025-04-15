@@ -3,8 +3,9 @@ import torch
 from forge.pncg import (
     lm_energy,
     pncg_dist,
+    pncg_dist_p2,
     pncg_sample,
-    prop_prob
+    prop_prob,
 )
 
 TEST_VOCAB_SIZE = 100
@@ -151,3 +152,35 @@ def test_prop_prob_self_consistency(sample_state, sample_state_embeddings, sampl
     ).squeeze(-1).sum(dim=1)
 
     assert torch.allclose(diag_log_prob_via_prop, direct_log_prob, atol=1e-6)
+
+@pytest.mark.parametrize("b_size", [1, 2])
+@pytest.mark.parametrize("n_len", [3, 5])
+@pytest.mark.parametrize("v_size", [50, 100])
+@pytest.mark.parametrize("e_dim", [8, 16])
+@pytest.mark.parametrize("alpha_val", [0.5, 1.0, 5.0])
+def test_pncg_p2_equivalence(b_size, n_len, v_size, e_dim, alpha_val):
+    test_embeddings = torch.randn(v_size, e_dim, device=device)
+    test_state_embeddings = torch.randn(b_size, n_len, e_dim, device=device)
+    test_gradients = torch.randn(b_size, n_len, e_dim, device=device)
+
+    means1 = pncg_dist(
+        embeddings=test_embeddings,
+        state_embeddings=test_state_embeddings,
+        gradients=test_gradients,
+        alpha=alpha_val,
+        p=2.0,
+    )
+
+    means2 = pncg_dist_p2(
+        embeddings=test_embeddings,
+        state_embeddings=test_state_embeddings,
+        gradients=test_gradients,
+        alpha=alpha_val,
+    )
+
+    assert torch.allclose(
+        means1,
+        means2,
+        atol=1e-5,
+        rtol=1e-4
+    ), f'failed at B={b_size}, N={n_len}, V={v_size}, E={e_dim}, alpha={alpha_val}'

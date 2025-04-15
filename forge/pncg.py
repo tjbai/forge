@@ -55,10 +55,12 @@ def pncg_dist(
         - state_embeddings.unsqueeze(2) # (B, N, E) -> (B, N, 1, E)
     )                                   # (B, N, V, E)
 
+    print('debug here', gradients.unsqueeze(2).shape, diffs.shape)
+
     means = -1/2 * torch.einsum( # (B, N, V)
         'bnve,bnke->bnv',
+        diffs,                   # (B, N, V, E)
         gradients.unsqueeze(2),  # (B, N, 1, E)
-        diffs                    # (B, N, V, E)
     )
 
     # (B, N, V)
@@ -68,6 +70,32 @@ def pncg_dist(
         norms = -1/(2*alpha) * torch.sqrt(torch.sum(diffs**2, dim=-1))
     else:
         norms = -1/(2*alpha) * torch.norm(diffs, p=p, dim=-1)
+
+    return F.log_softmax(means + norms, dim=-1) # (B, N, V)
+
+def pncg_dist_p2(
+    embeddings: torch.Tensor,
+    state_embeddings: torch.Tensor,
+    gradients: torch.Tensor,
+    alpha: float = 1.0,
+):
+    # memory-efficient implementation of pncg_dist for p=2
+
+    B, N, E = state_embeddings.shape
+    V, _ = embeddings.shape
+
+    grads_flat = gradients.view(-1, E)
+    term1 = (grads_flat @ embeddings.T).view(B, N, V)
+    term2 = (gradients * state_embeddings).sum(dim=-1).unsqueeze(-1)
+    means = -1/2 * (term1 - term2)
+
+    state_emb_flat = state_embeddings.view(-1, E)
+    dot_prod = (state_emb_flat @ embeddings.T).view(B, N, V)
+    state_emb_norm_sq = (state_embeddings**2).sum(dim=-1).unsqueeze(-1)
+    emb_v_norm_sq = (embeddings**2).sum(dim=-1).view(1, 1, V)
+    dist_sq = emb_v_norm_sq + state_emb_norm_sq - 2 * dot_prod
+    dist_sq = torch.clamp(dist_sq, min=1e-9)
+    norms = -1/(2*alpha) * torch.sqrt(dist_sq)
 
     return F.log_softmax(means + norms, dim=-1) # (B, N, V)
 
