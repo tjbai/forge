@@ -239,6 +239,109 @@ def run_mtm_pncg(
         'accept_rate': total_accepted / steps,
     }
 
+def run_iw_mtm_pncg(
+    model_name: str = 'openai-community/gpt2',
+    alpha: float = 1.0,
+    beta: float = 0.42,
+    p: float = 1.0,
+    num_samples: int = 4,
+    seqlen: int = 5,
+    steps: int = 500,
+    seed: int = 42,
+    quiet: bool = False,
+    init_wandb: bool = False,
+    run_name: str = 'mtm_pncg',
+    ema_lambda: float = 0.0,
+):
+    model = AutoModelForCausalLM.from_pretrained(model_name).to(device).eval()
+    embeddings = model.get_input_embeddings().weight.detach()
+    vocab_size = embeddings.shape[0]
+
+    if init_wandb:
+        wandb.init(
+            project='mcmc',
+            name=run_name,
+            config={
+                'method': 'mtm_pncg',
+                'alpha': alpha,
+                'beta': beta,
+                'p': p,
+                'seqlen': seqlen,
+                'steps': steps,
+                'seed': seed,
+                'num_samples': num_samples,
+            }
+        )
+
+    x = init_pncg_state(1, seqlen, seed, vocab_size)
+
+    s = time.time()
+    energies = []
+    ema_energy = None
+    states = []
+    total_accepted = 0
+    for i in tqdm(range(steps), disable=quiet):
+        x_embeds = get_embeddings(model, x).detach().clone().requires_grad_(True)
+        x_energy = lm_energy(model, x, x_embeds, beta=beta)
+        x_energy.sum().backward()
+
+        energies.append(x_energy.item())
+        states.append(x.squeeze().tolist())
+        ema_energy = (
+            energies[-1] if ema_energy is None else
+            ema_lambda * ema_energy + (1 - ema_lambda) * energies[-1]
+        )
+        log({'energy': energies[-1], 'ema_energy': ema_energy})
+
+        with torch.no_grad():
+            prop_dist = pncg_dist_p2(embeddings, x_embeds, x_embeds.grad, alpha=alpha, p=p)
+            ys = pncg_sample(prop_dist, k=num_samples).squeeze(0) # (K, N)
+            ys_probs = prop_prob(ys, prop_dist).squeeze()
+            ys_embeds = get_embeddings(model, ys)
+            y_energies = lm_energy(model, ys, ys_embeds, beta=beta)
+            log_forward_weights = -(ys_probs + y_energies)
+
+        selected_idx = torch.multinomial(
+            F.softmax(log_forward_weights, dim=0),
+            num_samples=1
+        ).squeeze()
+
+        yk_embeds = ys_embeds[selected_idx].unsqueeze(0).detach().clone().requires_grad_(True)
+        lm_energy(
+            model,
+            ys[selected_idx].unsqueeze(0),
+            yk_embeds,
+            beta=beta
+        ).sum().backward()
+
+        with torch.no_grad():
+            yk_prop_dist = pncg_dist_p2(
+                embeddings,
+                ys_embeds[selected_idx].unsqueeze(0),
+                yk_embeds.grad,
+                alpha=alpha, p=p
+            )
+            ref_xs = pncg_sample(yk_prop_dist, k=num_samples-1).squeeze(0) # (K-1, N)
+            ref_set = torch.cat((x, ref_xs), dim=0)
+            ref_set_probs = prop_prob(ref_set, yk_prop_dist).squeeze()
+            ref_set_embeds = get_embeddings(model, ref_set)
+            ref_set_energies = lm_energy(model, ref_set, ref_set_embeds, beta=beta)
+            log_reverse_weights = -(ref_set_probs + ref_set_energies)
+
+        log_accept_ratio = torch.logsumexp(log_forward_weights, dim=0) - torch.logsumexp(log_reverse_weights, dim=0)
+        accept_prob = torch.clamp(torch.exp(log_accept_ratio), max=1.0)
+
+        if torch.rand(1, device=device) < accept_prob:
+            x = ys[selected_idx].unsqueeze(0).detach().clone()
+            total_accepted += 1
+
+    return {
+        'states': states,
+        'energies': energies,
+        'wallclock': time.time() - s,
+        'accept_rate': total_accepted / steps,
+    }
+
 def run_pncg(
     model_name: str = 'openai-community/gpt2',
     alpha: float = 4.0,
@@ -330,3 +433,5 @@ if __name__ == '__main__':
     fire.Fire({
         'pncg': run_pncg,
         'mtm_pncg': run_mtm_pncg,
+        'iw_mtm_pncg': run_iw_mtm_pncg,
+    })
