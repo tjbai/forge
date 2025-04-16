@@ -1,4 +1,5 @@
 import time
+import random
 from typing import List
 from itertools import product
 from functools import lru_cache
@@ -11,7 +12,14 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from tqdm import tqdm
 
-# TODO -- reproducible preamble
+SEED = 42
+random.seed(SEED)
+torch.manual_seed(SEED)
+if torch.cuda.is_available():
+    torch.cuda.manual_seed(SEED)
+    torch.cuda.manual_seed_all(SEED)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 device = 'cuda' if torch.cuda.is_available() else 'mps'
 VOCAB = torch.tensor([[[-1., 1.]]], device=device)
@@ -96,9 +104,7 @@ def plot_run(
     empirical_dist: torch.Tensor,
     tvds: List[int],
     wallclock: float,
-    steps: int,
-    seqlen: int,
-    total_accepted: int,
+    accept_rate: float,
 ):
     sns.set_theme(style='whitegrid')
     fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(12, 4))
@@ -112,13 +118,13 @@ def plot_run(
     ax2.fill_between(indices, 0, empirical_dist, alpha=0.3)
     ax2.set_title('Empirical Distribution')
 
-    ax3.plot(np.arange(steps), tvds)
+    ax3.plot(np.arange(len(tvds)), tvds)
     ax3.grid(axis='y', linestyle='--', alpha=0.7)
     ax3.set_ylim(0, 0.5)
     ax3.set_yticks(np.arange(0, 0.5 + 0.05, 0.05))
     ax3.set_title('TVD')
 
-    fig.text(0.05, 0.05, f'n={seqlen}, steps={steps}, runtime={wallclock:.3f}s, sps={steps / wallclock:.3f}, accepted={total_accepted / steps:.2f}')
+    fig.text(0.05, 0.05, f'steps={len(tvds)}, runtime={wallclock:.3f}s, sps={len(tvds) / wallclock:.3f}, accepted={accept_rate:.2f}')
     plt.tight_layout(pad=3)
     plt.show()
 
@@ -194,7 +200,74 @@ def run_mtm_pncg(
 
     return {
         'tvds': tvds,
-        'empirical_dist': empirical_dist,
+        'exact_dist': exact_dist.squeeze().tolist(),
+        'empirical_dist': empirical_dist.squeeze().tolist(),
+        'wallclock': time.time() - s,
+        'accept_rate': total_accepted / steps,
+    }
+
+def run_iw_mtm_pncg(
+    alpha: float = 1.0,
+    beta: float = 0.42,
+    p: float = 1.0,
+    num_samples: int = 4,
+    seqlen: int = 5,
+    steps: int = 500,
+    seed: int = 42,
+    quiet: bool = False
+):
+    x = init_state(1, seqlen, seed)
+
+    total_accepted = 0
+    exact_dist = compute_exact_dist(seqlen, beta)
+    empirical_dist = torch.zeros(2**seqlen, dtype=torch.float32, device=device)
+    tvds = []
+
+    s = time.time()
+    for i in tqdm(range(steps), disable=quiet):
+        assert x.grad is None
+        x_energy = ncycle_energy(x, beta=beta)
+        x_energy.sum().backward()
+
+        with torch.no_grad():
+            prop_dist = pncg_dist(x, alpha=alpha, p=p)
+            ys = pncg_sample(prop_dist, k=num_samples).squeeze(0) # (K, N)
+            ys_probs = prop_prob(ys, prop_dist)
+            y_energies = ncycle_energy(ys, beta=beta)
+            log_forward_weights = -(ys_probs + y_energies)
+
+        selected_idx = torch.multinomial(
+            F.softmax(log_forward_weights, dim=0),
+            num_samples=1
+        ).item()
+
+        yk = ys[selected_idx].unsqueeze(0).detach().clone().requires_grad_(True) # (1, N)
+        ncycle_energy(yk, beta=beta).sum().backward()
+
+        with torch.no_grad():
+            yk_prop_dist = pncg_dist(yk, alpha=alpha, p=p)
+            ref_xs = pncg_sample(yk_prop_dist, k=num_samples-1).squeeze(0) # (K-1, N)
+            ref_set = torch.cat((x.detach(), ref_xs), dim=0)
+            ref_set_probs = prop_prob(ref_set, yk_prop_dist)
+            ref_set_energies = ncycle_energy(ref_set, beta=beta)
+            log_reverse_weights = -(ref_set_probs + ref_set_energies)
+
+        log_accept_ratio = torch.logsumexp(log_forward_weights, dim=0) - torch.logsumexp(log_reverse_weights, dim=0)
+        accept_prob = torch.clamp(torch.exp(log_accept_ratio), max=1.0)
+
+        if torch.rand(1, device=device) < accept_prob:
+            x = yk.detach().clone().requires_grad_(True)
+            total_accepted += 1
+        else:
+            x = x.detach().clone().requires_grad_(True)
+
+        empirical_dist[state_to_index(x)[0]] += 1
+        tvds.append(tvd(exact_dist, empirical_dist / empirical_dist.sum()))
+
+    return {
+        'tvds': tvds,
+        'exact_dist': exact_dist.squeeze().tolist(),
+        'empirical_dist': empirical_dist.squeeze().tolist(),
         'wallclock': time.time() - s,
         'accept_rate': total_accepted / steps,
     }
@@ -255,11 +328,16 @@ def run_pncg(
 
     return {
         'tvds': tvds,
-        'empirical_dist': empirical_dist,
+        'exact_dist': exact_dist.squeeze().tolist(),
+        'empirical_dist': empirical_dist.squeeze().tolist(),
         'wallclock': time.time() - s,
         'accept_rate': total_accepted / steps,
     }
 
 if __name__ == '__main__':
-    # fire.Fire(run_pncg)
-    fire.Fire(run_mtm_pncg)
+    outputs = fire.Fire({
+        'pncg': run_pncg,
+        'mtm_pncg': run_mtm_pncg,
+        'iw_mtm_pncg': run_iw_mtm_pncg,
+    })
+    plot_run(**outputs)
