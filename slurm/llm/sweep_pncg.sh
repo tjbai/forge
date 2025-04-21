@@ -9,4 +9,4 @@
 #SBATCH --time=4:00:00
 #SBATCH --output=sweep_pncg_%A_%a.out
 
-uv run wandb agent --count=25 tjbai/mcmc/2h3qugp2
+uv run wandb agent --count=25 tjbai/mcmc/aoe9jw9y

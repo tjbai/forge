@@ -10,7 +10,7 @@ results = run_mtm_pncg(
     seqlen=20,
     steps=50_000,
     seed=42,
-    num_samples=16,
+    num_samples=512,
 )
 
 with open('dumps/llm/sanity_mtm_pncg.json', 'w') as f:
