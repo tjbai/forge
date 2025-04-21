@@ -81,7 +81,7 @@ Why is MTM bad?
 
 ## 4/21: 56fae8166faedd33956b9d25f0abb387fb0afd4b
 
-ising numbers:
+ising numbers
 
 baseline:
 |   seqlen |     alpha |   mean_final_tvd |   std_final_tvd |   mean_accept_rate |   mean_wallclock |
