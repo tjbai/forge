@@ -113,3 +113,58 @@
 #     baseline_results = json.load(f)
 
 # df = pd.DataFrame(baseline_results)
+
+# %%
+import json
+import pandas as pd
+import matplotlib.pyplot as plt
+from tabulate import tabulate
+
+with open('dumps/ising/tune_pncg.json') as f:
+    baseline = pd.DataFrame(json.load(f))
+
+with open('dumps/ising/tune_mtm_pncg.json') as f:
+    mtm = pd.DataFrame(json.load(f))
+
+with open('dumps/ising/tune_iw_mtm_pncg.json') as f:
+    iw = pd.DataFrame(json.load(f))
+
+def tab(jwn):
+    print(tabulate(jwn, headers='keys', tablefmt='github'))
+
+def agg(df):
+    keys = ['seqlen', 'num_samples', 'alpha'] if 'num_samples' in df.keys() else ['seqlen', 'alpha']
+    df = df.groupby(keys).agg(
+        mean_final_tvd=('final_tvd', 'mean'),
+        std_final_tvd=('final_tvd', 'std'),
+        mean_accept_rate=('accept_rate', 'mean'),
+        mean_wallclock=('wallclock', 'mean')
+    ).reset_index()
+    best_settings = []
+    for seqlen in [4, 8, 16]:
+        dfp = df[df['seqlen'] == seqlen]
+        best_row = dfp.loc[dfp['mean_final_tvd'].idxmin()]
+        best_settings.append({
+            'seqlen': int(best_row['seqlen']),
+            'alpha': best_row['alpha'],
+            'mean_final_tvd': best_row['mean_final_tvd'],
+            'std_final_tvd': best_row['std_final_tvd'],
+            'mean_accept_rate': best_row['mean_accept_rate'],
+            'mean_wallclock': best_row['mean_wallclock'],
+        })
+        if 'num_samples' in best_row:
+            best_settings[-1]['num_samples'] = int(best_row['num_samples']),
+    return pd.DataFrame(best_settings)
+
+# %%
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+sns.set_style('whitegrid')
+
+best_baseline = baseline[(baseline['seqlen'] == 4) & (baseline['alpha'] == 64)]
+# best_mtm = mtm[mtm['alpha'] == ]
+
+best_4s = [] # there should be 3 things, each one is a list of tuples
+best_8s = []
+best_16s = []
