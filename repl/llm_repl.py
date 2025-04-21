@@ -38,7 +38,7 @@ def plot_method(jwn, label=None, color=None):
 
     plt.axvline(cross, color=color, linestyle='--', alpha=0.7)
 
-    text_y = 240 if label == "Importance Weighted" else (260 if label == "Multiple-Try" else 280)
+    text_y = 240 if label == "Importance-Weighted" else (260 if label == "Multiple-Try" else 280)
     plt.annotate(
         f"{label}: ({cross_time:.0f} sec)",
         xy=(cross, 175),
@@ -52,7 +52,7 @@ def plot_method(jwn, label=None, color=None):
 
 baseline_cross, baseline_time = plot_method(baseline, label="Baseline", color=colors['baseline'])
 mtm_cross, mtm_time = plot_method(mtm, label="Multiple-Try", color=colors['mtm'])
-iw_cross, iw_time = plot_method(iw, label="Importance Weighted", color=colors['iw'])
+iw_cross, iw_time = plot_method(iw, label="Importance-Weighted", color=colors['iw'])
 
 plt.axhline(175, color='#777777', linestyle='-', alpha=0.8)
 
@@ -67,7 +67,7 @@ plt.tight_layout()
 # plt.show()
 plt.savefig('figures/llm_comp.png', dpi=300)
 
-# %%
+%%
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
