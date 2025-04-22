@@ -4,6 +4,13 @@ import numpy as np
 from tqdm import tqdm
 from transformers import pipeline, set_seed, AutoTokenizer, AutoModelForCausalLM
 
+# monkey
+import warnings
+from transformers import logging
+warnings.filterwarnings("ignore", message="The attention mask and the pad token id were not set.")
+warnings.filterwarnings("ignore", message="Setting `pad_token_id` to `eos_token_id`")
+logging.set_verbosity_error()
+
 lm = pipeline('text-generation', model='gpt2', device='cuda')
 set_seed(42)
 
@@ -22,13 +29,11 @@ for i in tqdm(range(1000)):
     log_probs = torch.log_softmax(outputs.logits, dim=-1)
     
     tokens = inputs.input_ids[0]
-    token_log_probs = [log_probs[0, i-1, tokens[i]] for i in range(1, len(tokens))]
-    sequence_log_prob = sum(token_log_probs).item()
+    token_log_probs = [log_probs[0, i-1, tokens[i]].item() for i in range(1, len(tokens))]
     
     results.append({
         'text': generated_text,
-        'log_prob': sequence_log_prob / 20,
-        'prob': sequence_prob
+        'log_prob': np.mean(token_log_probs)
     })
 
     if (i+1) % 100 == 0:
