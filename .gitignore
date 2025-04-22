@@ -28,6 +28,7 @@ slurm/**/*.slurm
 
 !figures
 !figures/*.png
+!figures/*.gif
 
 !tests
 !tests/**.py

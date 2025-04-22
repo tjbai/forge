@@ -21,7 +21,7 @@ if torch.cuda.is_available():
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-device = 'cuda' if torch.cuda.is_available() else 'mps'
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 VOCAB = torch.tensor([[[-1., 1.]]], device=device)
 V = VOCAB.shape[-1]
 
