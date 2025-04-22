@@ -67,7 +67,7 @@ plt.tight_layout()
 # plt.show()
 plt.savefig('figures/llm_comp.png', dpi=300)
 
-%%
+# %%
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt

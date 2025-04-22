@@ -156,19 +156,14 @@
 #             best_settings[-1]['num_samples'] = int(best_row['num_samples']),
 #     return pd.DataFrame(best_settings)
 
-# # %%
-# #!/usr/bin/env python3
+# %%
 # import json
 # import pandas as pd
 # import matplotlib.pyplot as plt
-# from matplotlib.ticker import ScalarFormatter
 
-# def disable_sci_notation(ax):
-#     """Disable scientific notation and offset on the y-axis."""
-#     fmt = ScalarFormatter()
-#     fmt.set_scientific(False)
-#     fmt.set_useOffset(False)
-#     ax.yaxis.set_major_formatter(fmt)
+# # — Global margin settings (you can tweak these) —
+# LEFT, RIGHT = 0.18, 0.95
+# BOTTOM, TOP = 0.12, 0.95
 
 # # — Load dataframes —
 # paths = {
@@ -176,7 +171,6 @@
 #     "mtm":      "dumps/ising/tune_mtm_pncg.json",
 #     "iw":       "dumps/ising/tune_iw_mtm_pncg.json",
 # }
-
 # data = {}
 # for name, path in paths.items():
 #     with open(path) as f:
@@ -184,178 +178,116 @@
 #     df["alpha"] = pd.to_numeric(df["alpha"])
 #     data[name] = df
 
-# # — Plot settings —
-# seqlens = [4, 8, 16]
-# for seqlen in seqlens:
-#     # Prepare baseline grouping
-#     base_seq   = data["baseline"][data["baseline"]["seqlen"] == seqlen]
-#     base_group = (
-#         base_seq
+# # — Helper to plot one comparison —
+# def plot_comparison(seqlen, key, label_fmt):
+#     # key = "mtm" or "iw"
+#     base = data["baseline"]
+#     other = data[key]
+
+#     # baseline grouping
+#     base_grp = (
+#         base[base["seqlen"] == seqlen]
 #         .groupby("alpha")["final_tvd"]
-#         .agg(["mean", "std"])
-#         .rename(columns={"mean": "mean_tvd", "std": "std_tvd"})
+#         .agg(["mean","std"])
+#         .rename(columns={"mean":"mean_tvd","std":"std_tvd"})
 #         .reset_index()
 #     )
 
-#     # —— MTM vs Baseline ——
-#     fig, ax = plt.subplots(figsize=(6, 4))
+#     # new figure + fixed margins
+#     fig, ax = plt.subplots(figsize=(6,4), constrained_layout=False)
+#     # plot baseline
 #     ax.plot(
-#         base_group["alpha"],
-#         base_group["mean_tvd"],
+#         base_grp["alpha"],
+#         base_grp["mean_tvd"],
 #         "k-",
-#         linewidth=2,
+#         lw=2,
 #         label="Baseline"
 #     )
-#     for ns in sorted(data["mtm"]["num_samples"].unique()):
+#     # plot other curves
+#     for ns in sorted(other["num_samples"].unique()):
 #         grp = (
-#             data["mtm"]
-#             [ (data["mtm"]["seqlen"] == seqlen) & (data["mtm"]["num_samples"] == ns) ]
+#             other
+#             [(other["seqlen"] == seqlen) & (other["num_samples"] == ns)]
 #             .groupby("alpha")["final_tvd"]
-#             .agg(["mean","std"])
+#             .mean()
 #             .reset_index()
-#             .rename(columns={"mean":"mean_tvd"})
 #         )
 #         ax.plot(
 #             grp["alpha"],
-#             grp["mean_tvd"],
+#             grp["final_tvd"],
 #             "-o",
-#             label=f"MTM B={int(ns)}"
+#             label=label_fmt.format(int(ns))
 #         )
 
+#     # log–log scales
 #     ax.set_xscale("log")
 #     ax.set_yscale("log")
-#     disable_sci_notation(ax)
-#     ax.grid(True, which="both", ls="--", alpha=0.3)
+
+#     # styling
 #     ax.set_xlabel("Step Size")
 #     ax.set_ylabel("TVD")
+#     ax.grid(True, which="both", ls="--", alpha=0.3)
 #     ax.legend()
-#     fig.tight_layout()
-#     fig.savefig(f"figures/seqlen_{seqlen}_mtm_vs_baseline.png", dpi=300)
 
-#     # —— IW‑MTM vs Baseline ——
-#     fig, ax = plt.subplots(figsize=(6, 4))
-#     ax.plot(
-#         base_group["alpha"],
-#         base_group["mean_tvd"],
-#         "k-",
-#         linewidth=2,
-#         label="Baseline"
+#     # **apply the same margins every time**
+#     fig.subplots_adjust(
+#         left=LEFT,
+#         right=RIGHT,
+#         bottom=BOTTOM,
+#         top=TOP
 #     )
-#     for ns in sorted(data["iw"]["num_samples"].unique()):
-#         grp = (
-#             data["iw"]
-#             [ (data["iw"]["seqlen"] == seqlen) & (data["iw"]["num_samples"] == ns) ]
-#             .groupby("alpha")["final_tvd"]
-#             .agg(["mean","std"])
-#             .reset_index()
-#             .rename(columns={"mean":"mean_tvd"})
-#         )
-#         ax.plot(
-#             grp["alpha"],
-#             grp["mean_tvd"],
-#             "-o",
-#             label=f"IW‑MTM B={int(ns)}"
-#         )
 
-#     ax.set_xscale("log")
-#     ax.set_yscale("log")
-#     disable_sci_notation(ax)
-#     ax.grid(True, which="both", ls="--", alpha=0.3)
-#     ax.set_xlabel("Step Size")
-#     ax.set_ylabel("TVD")
-#     ax.legend()
-#     fig.tight_layout()
-#     fig.savefig(f"figures/seqlen_{seqlen}_iw_vs_baseline.png", dpi=300)
+#     # save
+#     fig.savefig(
+#         f"figures/seqlen_{seqlen}_{key}_vs_baseline.png",
+#         dpi=300
+#     )
+#     plt.close(fig)
+
+# for L in [4, 8, 16]:
+#     plot_comparison(L, "mtm",  label_fmt="MTM B={}")
+#     plot_comparison(L, "iw",   label_fmt="IW‑MTM B={}")
 
 # %%
-#!/usr/bin/env python3
 import json
-import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
+import seaborn as sns
 
-# — Global margin settings (you can tweak these) —
-LEFT, RIGHT = 0.18, 0.95
-BOTTOM, TOP = 0.12, 0.95
+for seqlen in [4, 8, 16]:
+    with open('dumps/ising/best_pncg.json') as f:
+        baseline = json.load(f)[str(seqlen)]
 
-# — Load dataframes —
-paths = {
-    "baseline": "dumps/ising/tune_pncg.json",
-    "mtm":      "dumps/ising/tune_mtm_pncg.json",
-    "iw":       "dumps/ising/tune_iw_mtm_pncg.json",
-}
-data = {}
-for name, path in paths.items():
-    with open(path) as f:
-        df = pd.DataFrame(json.load(f))
-    df["alpha"] = pd.to_numeric(df["alpha"])
-    data[name] = df
+    with open('dumps/ising/best_mtm_pncg.json') as f:
+        mtm = json.load(f)[str(seqlen)]
 
-# — Helper to plot one comparison —
-def plot_comparison(seqlen, key, label_fmt):
-    # key = "mtm" or "iw"
-    base = data["baseline"]
-    other = data[key]
+    with open('dumps/ising/best_iw_mtm_pncg.json') as f:
+        iw = json.load(f)[str(seqlen)]
 
-    # baseline grouping
-    base_grp = (
-        base[base["seqlen"] == seqlen]
-        .groupby("alpha")["final_tvd"]
-        .agg(["mean","std"])
-        .rename(columns={"mean":"mean_tvd","std":"std_tvd"})
-        .reset_index()
-    )
+    plt.figure(figsize=(6, 4))
+    sns.set_theme(style="whitegrid")
 
-    # new figure + fixed margins
-    fig, ax = plt.subplots(figsize=(6,4), constrained_layout=False)
-    # plot baseline
-    ax.plot(
-        base_grp["alpha"],
-        base_grp["mean_tvd"],
-        "k-",
-        lw=2,
-        label="Baseline"
-    )
-    # plot other curves
-    for ns in sorted(other["num_samples"].unique()):
-        grp = (
-            other
-            [(other["seqlen"] == seqlen) & (other["num_samples"] == ns)]
-            .groupby("alpha")["final_tvd"]
-            .mean()
-            .reset_index()
-        )
-        ax.plot(
-            grp["alpha"],
-            grp["final_tvd"],
-            "-o",
-            label=label_fmt.format(int(ns))
-        )
+    colors = {
+        'baseline': '#3366CC',
+        'mtm': '#FF9900',
+        'iw': '#33AA33'
+    }
 
-    # log–log scales
-    ax.set_xscale("log")
-    ax.set_yscale("log")
+    def plot_method(jwn, label=None, color=None):
+        energies = list(zip(*[d['tvds'] for d in jwn]))
+        means = [np.mean(d) for d in energies]
+        xs = np.arange(1000)
+        plt.plot(xs, means, label=label, color=color, linewidth=2)
 
-    # styling
-    ax.set_xlabel("Step Size")
-    ax.set_ylabel("TVD")
-    ax.grid(True, which="both", ls="--", alpha=0.3)
-    ax.legend()
+    plot_method(baseline, label="Baseline", color=colors['baseline'])
+    plot_method(mtm, label="Multiple-Try", color=colors['mtm'])
+    plot_method(iw, label="Importance-Weighted", color=colors['iw'])
 
-    # **apply the same margins every time**
-    fig.subplots_adjust(
-        left=LEFT,
-        right=RIGHT,
-        bottom=BOTTOM,
-        top=TOP
-    )
+    plt.ylabel('TVD', fontsize=14)
+    plt.xlabel('Step', fontsize=14)
+    plt.xlim(0, 1000)
+    plt.grid(True, alpha=0.5)
+    plt.legend(loc='upper right', framealpha=0.8)
+    plt.tight_layout()
 
-    # save
-    fig.savefig(
-        f"figures/seqlen_{seqlen}_{key}_vs_baseline.png",
-        dpi=300
-    )
-    plt.close(fig)
-
-for L in [4, 8, 16]:
-    plot_comparison(L, "mtm",  label_fmt="MTM B={}")
-    plot_comparison(L, "iw",   label_fmt="IW‑MTM B={}")
+    plt.savefig(f'figures/ising_comp_{seqlen}.png', dpi=300)
