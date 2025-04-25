@@ -70,6 +70,7 @@ plt.savefig('figures/llm_comp.png', dpi=300)
 # %%
 import pandas as pd
 import numpy as np
+import matplotlib
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy import stats
@@ -78,46 +79,55 @@ def parse_data(file_path):
     df = pd.read_csv(file_path)
     return df
 
-df = parse_data('dumps/llm/sweep.csv')
+for pref in ['iw', 'mtm']:
+    font = {'family' : 'normal', 'size': 22}
+    matplotlib.rc('font', **font)
 
-sns.set_theme(style='whitegrid')
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+    df = parse_data(f'dumps/llm/{pref}_sweep.csv')
 
-x1 = np.log10(df['alpha'])
-mask1 = ~np.isnan(x1)
-x1_clean = x1[mask1]
-y1_clean = df['ema_energy'][mask1]
-slope1, intercept1, r_value1, p_value1, std_err1 = stats.linregress(x1_clean, y1_clean)
+    sns.set_theme(style='whitegrid')
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(8, 3))
 
-ax1.scatter(df['alpha'], df['ema_energy'], alpha=0.7)
-ax1.set_xscale('log')
-ax1.grid(True, alpha=0.5)
+    x1 = np.log10(df['alpha'])
+    mask1 = ~np.isnan(x1)
+    x1_clean = x1[mask1]
+    y1_clean = df['ema_energy'][mask1]
+    slope1, intercept1, r_value1, p_value1, std_err1 = stats.linregress(x1_clean, y1_clean)
 
-x1_line = np.logspace(np.log10(df['alpha'].min()), np.log10(df['alpha'].max()), 1000)
-y1_line = slope1 * np.log10(x1_line) + intercept1
-ax1.plot(x1_line, y1_line, 'r-')
-ax1.set_xlabel('Step Size')
-ax1.set_ylabel('Energy')
+    ax1.scatter(df['alpha'], df['ema_energy'], alpha=0.5)
+    ax1.set_xscale('log')
+    ax1.grid(True, alpha=0.5)
 
-x2 = np.log10(df['num_samples'])
-mask2 = ~np.isnan(x2)
-x2_clean = x2[mask2]
-y2_clean = df['ema_energy'][mask2]
-slope2, intercept2, r_value2, p_value2, std_err2 = stats.linregress(x2_clean, y2_clean)
+    x1_line = np.logspace(np.log10(df['alpha'].min()), np.log10(df['alpha'].max()), 1000)
+    y1_line = slope1 * np.log10(x1_line) + intercept1
+    ax1.plot(x1_line, y1_line, 'r-')
+    ax1.set_xlabel('Step Size')
+    ax1.set_ylabel('Energy')
 
-ax2.scatter(df['num_samples'], df['ema_energy'], alpha=0.7)
-ax2.set_xscale('log')
-ax2.grid(True, alpha=0.5)
+    x2 = np.log10(df['num_samples'])
+    mask2 = ~np.isnan(x2)
+    x2_clean = x2[mask2]
+    y2_clean = df['ema_energy'][mask2]
+    slope2, intercept2, r_value2, p_value2, std_err2 = stats.linregress(x2_clean, y2_clean)
 
-x2_line = np.logspace(np.log10(df['num_samples'].min()), np.log10(df['num_samples'].max()), 1000)
-y2_line = slope2 * np.log10(x2_line) + intercept2
-ax2.plot(x2_line, y2_line, 'r-')
-ax2.set_xlabel('Batch Size')
-ax2.set_ylabel('Energy')
+    ax2.scatter(df['num_samples'], df['ema_energy'], alpha=0.5)
+    ax2.set_xscale('log')
+    ax2.grid(True, alpha=0.5)
 
-plt.tight_layout()
-plt.savefig('figures/llm_hparams.png', dpi=300)
-# plt.show()
+    x2_line = np.logspace(np.log10(df['num_samples'].min()), np.log10(df['num_samples'].max()), 1000)
+    y2_line = slope2 * np.log10(x2_line) + intercept2
+    ax2.plot(x2_line, y2_line, 'r-')
+    ax2.set_xlabel('Batch Size')
+    ax2.set_ylabel('Energy')
+
+    ax1.text(0.05, 0.85, f'$R^2 = {r_value1**2:.3f}$', transform=ax1.transAxes,
+             bbox=dict(facecolor='white', alpha=0.5))
+
+    ax2.text(0.05, 0.85, f'$R^2 = {r_value2**2:.3f}$', transform=ax2.transAxes,
+             bbox=dict(facecolor='white', alpha=0.5))
+
+    plt.tight_layout()
+    plt.savefig(f'figures/{pref}_llm_hparams.png', dpi=300)
 
 # %%
 import pandas as pd, seaborn as sns, matplotlib.pyplot as plt
