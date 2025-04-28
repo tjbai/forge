@@ -37,3 +37,6 @@ slurm/**/*.slurm
 !sweep/**.yml
 
 !slides.pdf
+
+!results
+!results/**.pdf

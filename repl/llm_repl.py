@@ -151,3 +151,33 @@ sns.lineplot(
 )
 plt.tight_layout()
 plt.savefig('figures/perf_scaling.png', dpi=300)
+
+# %%
+import json
+import numpy as np
+
+with open('dumps/llm/best_pncg.json') as f:
+    baseline = json.load(f)
+    baseline_final_energy = np.array([d['energies'][-1] for d in baseline])
+    baseline_wallclock = np.array([d['wallclock'] for d in baseline])
+
+with open('dumps/llm/best_mtm_pncg.json') as f:
+    mtm = json.load(f)
+    mtm_final_energy = np.array([d['energies'][-1] for d in mtm])
+    mtm_wallclock = np.array([d['wallclock'] for d in mtm])
+
+with open('dumps/llm/best_iw_mtm_pncg.json') as f:
+    iw = json.load(f)
+    iw_final_energy = np.array([d['energies'][-1] for d in iw])
+    iw_wallclock = np.array([d['wallclock'] for d in iw])
+
+def bootstrap(data):
+    return np.percentile([np.mean(np.random.choice(data, size=len(data), replace=True)) for _ in range(1000)], [2.5, 97.5])
+
+print(np.mean(baseline_final_energy), bootstrap(baseline_final_energy))
+print(np.mean(mtm_final_energy), bootstrap(mtm_final_energy))
+print(np.mean(iw_final_energy), bootstrap(iw_final_energy))
+print('###')
+print(np.mean(baseline_wallclock), bootstrap(baseline_wallclock))
+print(np.mean(mtm_wallclock), bootstrap(mtm_wallclock))
+print(np.mean(iw_wallclock), bootstrap(iw_wallclock))
